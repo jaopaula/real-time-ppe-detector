@@ -1,93 +1,117 @@
-# PPE-YOLO — Detecção de EPIs em Tempo Real (Capacete + Óculos)
+# 🦺 Real-Time PPE Detector — YOLO9 / YOLO8
+### Detecção em tempo real de EPIs (Capacete + Óculos)
 
-Este projeto implementa um sistema de **detecção de Equipamentos de Proteção Individual (EPIs)** usando modelos **YOLOv8/YOLO9**, com suporte a detecção em **tempo real via webcam**.
-
----
-
-## 📦 Dataset Utilizado
-
-O modelo utiliza o dataset **SH17 – PPE Detection Dataset**, disponível gratuitamente no Kaggle:
-
-🔗 https://www.kaggle.com/datasets/mugheesahmad/sh17-dataset-for-ppe-detection
-
-Este dataset contém mais de 15 mil instâncias anotadas, incluindo:
-- Capacete (Helmet)
-- Óculos de proteção (Glasses)
-- Luvas (Gloves)
-- Máscara (Mask)
-- Colete de segurança (Safety Vest)
-- Classes “NO-PPE” indicando ausência de EPI
-
-O dataset foi criado e mantido por **Mughees Ahmad** e a equipe associada ao projeto.
+Este repositório implementa detecção de EPIs em tempo real usando modelos YOLO9-E e YOLO8, com suporte completo a GPU NVIDIA + CUDA, detecção via webcam e possibilidade de treinar modelos customizados.
 
 ---
 
-## 📂 Estrutura do Projeto
+# 🚀 Pipeline Completa (GPU → CUDA → Torch → YOLO → Webcam)
 
-```
-project/
-│── data/              # coloque aqui datasets (opcional)
-│── models/
-│   └── yolo9e.pt      # modelo pré-treinado
-│── runs/              # saídas geradas automaticamente
-│── detect_webcam.py   # script principal de detecção ao vivo
-│── train.py           # opcional — treinar ou re-treinar modelos
-│── requirements.txt   # dependências
-└── README.md
-```
+Este README documenta exatamente a pipeline real que você utilizou, incluindo verificações necessárias.
 
 ---
 
-## 🧠 Modelos Utilizados
+# 1️⃣ Criar ambiente virtual
 
-### 🔹 YOLO9-E (recomendado)
-- Melhor precisão (mAP50 ≈ 70.9%)
-- Excelente para EPI (capacete, óculos, colete, etc.)
-- Ideal para TCC e ambiente corporativo
-
-Baixe o modelo pré-treinado na pasta **models/**:
-```
-models/yolo9e.pt
-```
-
----
-
-## ⚙️ Instalação
-
-### 1. Crie o ambiente virtual
 ```
 python -m venv .venv
 ```
 
-### 2. Ative o ambiente
+---
+
+# 2️⃣ Ativar o ambiente
+
 Windows:
 ```
-.venv\Scripts\activate
+.venv\\Scripts\\activate
 ```
 
-### 3. Instale as dependências
+---
+
+# 3️⃣ Instalar dependências do projeto
+
 ```
 pip install -r requirements.txt
 ```
 
 ---
 
-## 🎥 Detecção em Tempo Real (Webcam)
+# 4️⃣ Instalar PyTorch GPU (fundamental)
 
-Para rodar o detector ao vivo:
+Compatível com a GTX 1660 SUPER:
 
+```
+pip install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+```
+
+---
+
+# 5️⃣ Verificar GPU e CUDA
+
+### 5.1 Torch detectou a GPU?
+```
+python -c "import torch; print(torch.cuda.is_available())"
+```
+
+### 5.2 Ver driver e GPU instalada
+```
+wmic path win32_VideoController get name,driverversion
+```
+
+### 5.3 Teste completo (script do projeto)
+```
+python scripts/check_cuda.py
+```
+
+Saída esperada:
+```
+Torch version: 2.5.1+cu121
+CUDA disponível: True
+Nome da GPU: NVIDIA GeForce GTX 1660 SUPER
+```
+
+---
+
+# 6️⃣ Baixar o modelo YOLO
+
+Modelo recomendado: YOLO9-E
+
+Coloque o arquivo na pasta:
+```
+models/yolo9e.pt
+```
+
+---
+
+# 7️⃣ Dataset (opcional — para treino)
+
+Dataset oficial utilizado:
+🔗 https://www.kaggle.com/datasets/mugheesahmad/sh17-dataset-for-ppe-detection
+
+Estrutura esperada em caso de treino:
+```
+data/
+ ├── train/
+ ├── valid/
+ ├── test/
+ └── data.yaml
+```
+
+---
+
+# 8️⃣ Detecção em tempo real via webcam
+
+Uso básico:
 ```
 python detect_webcam.py --weights models/yolo9e.pt --device 0
 ```
 
 Parâmetros úteis:
-
-| Parâmetro | Exemplo | Descrição |
-|----------|---------|-----------|
-| `--device` | `0` | usa GPU |
-| `--device` | `cpu` | usa CPU |
-| `--conf` | `0.25` | confiança mínima |
-| `--imgsz` | `960` | resolução melhor |
+```
+--device 0     # GPU
+--conf 0.20    # confiança mínima
+--imgsz 960    # maior precisão
+```
 
 Exemplo completo:
 ```
@@ -96,76 +120,63 @@ python detect_webcam.py --weights models/yolo9e.pt --device 0 --conf 0.20 --imgs
 
 ---
 
-## 🏋️‍♂️ Treinando (opcional)
+# 9️⃣ Treinar seu próprio modelo (opcional)
 
-Caso deseje treinar seu próprio dataset:
-
-### 1. Coloque o dataset dentro de `data/`:
-
-Estrutura:
-```
-data/
- ├── train/
- ├── valid/
- └── data.yaml
-```
-
-### 2. Execute o treinamento
 ```
 python train.py
 ```
 
-Por padrão, o treinamento usa:
-- YOLOv8-nano
-- 50 épocas
-- Resolução 640
-- GPU (device 0)
-
----
-
-## 📘 detect_webcam.py — Comportamento
-
-O script:
-- Lê a webcam
-- Processa cada frame com YOLO
-- Detecta **Helmet, Glasses e demais EPIs**
-- Exibe caixa verde/vermelha
-- Mostra status “EPI OK” ou “FALTANDO”
-
-Ideal para monitoramento, TCC e demonstrações reais.
-
----
-
-## 📝 Logs e Resultados
-
-Tudo que o YOLO gerar (imagens, gráficos, métricas) será salvo automaticamente em:
-
+Saídas ficam em:
 ```
 runs/detect/
 ```
 
 ---
 
-## 💡 Dicas de Performance
+# 🔟 Estrutura Completa do Projeto
 
-- Use `--imgsz 960` para melhor precisão.
-- Use `YOLO9-E` para o melhor reconhecimento de óculos/capacetes.
-- Caso o FPS caia, reduza para `--imgsz 640`.
-- Em GPUs fracas, desabilite half precision:
-  ```
-  --half False
-  ```
+```
+real-time-ppe-detector/
+│── data/
+│── models/
+│   └── yolo9e.pt
+│── runs/
+│── scripts/
+│   └── check_cuda.py
+│── detect_webcam.py
+│── train.py
+│── requirements.txt
+└── README.md
+```
 
 ---
 
-## 📄 Licença
+# 🧹 .gitignore recomendado
 
-Uso livre para fins educacionais, acadêmicos e corporativos internos.
+```
+__pycache__/
+*.py[cod]
+.venv/
+.vscode/
+.idea/
+runs/
+models/*.pt
+data/
+.DS_Store
+Thumbs.db
+```
 
 ---
 
-## 👨‍💻 Autor
+# 💡 Dicas pro TCC
 
-Projeto configurado com orientação assistida por IA.  
-Integrado ao sistema de TCC do João — USCS.
+✔ YOLO9-E = melhor precisão
+✔ imgsz 960 melhora óculos/capacete
+✔ use device 0
+✔ não commit modelos pesados
+✔ mantenha scripts minimalistas
 
+---
+
+# 👨‍💻 Autor
+Projeto configurado para o TCC de João — USCS.
