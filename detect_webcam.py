@@ -3,124 +3,131 @@ import cv2
 from ultralytics import YOLO
 
 
-def main(weights: str, device: str = "0", conf: float = 0.25, imgsz: int = 960):
-    print(f"[INFO] Carregando modelo: {weights}")
-    model = YOLO(weights)
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Detecção de EPIs (Helmet / Glasses) em tempo real com YOLO"
+    )
+    parser.add_argument("--weights", type=str, required=True, help="Caminho do modelo (.pt)")
+    parser.add_argument("--device", type=str, default="0", help="'0' para GPU, 'cpu' para CPU")
+    parser.add_argument("--conf", type=float, default=0.25, help="Confiança mínima")
+    parser.add_argument("--imgsz", type=int, default=640, help="Resolução de inferência")
+    return parser.parse_args()
 
-    # Mostra todas as classes do modelo (pra conferirmos)
-    print("[INFO] Classes do modelo:")
-    for idx, name in model.names.items():
-        print(f"  {idx}: {name}")
 
-    # Queremos focar só em Helmet e Glasses
-    target_names = ["Helmet", "Glasses"]
+def draw_hud(frame, helmet_ok, glasses_ok):
+    """Painel no canto inferior direito mostrando True/False."""
+    h, w = frame.shape[:2]
 
-    # mapear nome -> id (case-insensitive)
-    name_to_id = {name.lower(): idx for idx, name in model.names.items()}
-    target_ids = []
-    for n in target_names:
-        if n.lower() in name_to_id:
-            target_ids.append(name_to_id[n.lower()])
-        else:
-            print(f"[WARN] Classe '{n}' não encontrada no modelo!")
+    pw, ph = 260, 70
+    margin = 10
 
-    if not target_ids:
-        print("[ERRO] Nenhuma das classes alvo foi encontrada. Encerrando.")
-        return
+    x2, y2 = w - margin, h - margin
+    x1, y1 = x2 - pw, y2 - ph
 
-    # nomes oficiais (ex: se estiver "helmet" no modelo, usamos isso)
-    target_labels = [model.names[i] for i in target_ids]
-    print(f"[INFO] Filtrando apenas estas classes: {target_labels} (ids={target_ids})")
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 0), -1)
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    fs = 0.6
+    th = 2
+
+    cv2.putText(frame, f"Helmet: {helmet_ok}", (x1 + 10, y1 + 25),
+                font, fs, (0,255,0) if helmet_ok else (0,0,255), th, cv2.LINE_AA)
+
+    cv2.putText(frame, f"Glasses: {glasses_ok}", (x1 + 10, y1 + 50),
+                font, fs, (0,255,0) if glasses_ok else (0,0,255), th, cv2.LINE_AA)
+
+
+def main():
+    args = parse_args()
+    model = YOLO(args.weights)
+
+    print("[INFO] Classes carregadas:")
+    for cid, cname in model.names.items():
+        print(f"  {cid}: {cname}")
+
+    # ------------------------------------------------------------
+    # MAPEAMENTO ESPECÍFICO DAS CLASSES
+    # ------------------------------------------------------------
+    CLASS_PERSON = None
+    CLASS_HELMET = None
+    CLASS_GLASSES = None
+
+    for cid, cname in model.names.items():
+        name = cname.lower()
+
+        if name == "person":
+            CLASS_PERSON = cid
+        if name == "helmet":
+            CLASS_HELMET = cid
+        if name == "glasses":
+            CLASS_GLASSES = cid
+
+    print("\n[INFO] Classes importantes:")
+    print("  person:", CLASS_PERSON)
+    print("  helmet:", CLASS_HELMET)
+    print("  glasses:", CLASS_GLASSES)
+    print()
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        print("[ERRO] Não foi possível abrir a webcam.")
+        print("[ERRO] Webcam não encontrada.")
         return
 
+    print("[INFO] Pressione ESC para sair...")
+
     while True:
-        ret, frame = cap.read()
-        if not ret:
+        ok, frame = cap.read()
+        if not ok:
             break
 
         results = model.predict(
-            source=frame,
-            save=False,
-            device=device,
-            conf=conf,
-            imgsz=imgsz,
-            verbose=False
+            frame,
+            imgsz=args.imgsz,
+            conf=args.conf,
+            device=args.device,
+            verbose=False,
         )
 
         det = results[0]
         boxes = det.boxes
 
-        presentes = set()
+        helmet = False
+        glasses = False
+        person_found = False
 
         for box in boxes:
-            cls_id = int(box.cls[0].item())
-            if cls_id not in target_ids:
-                # ignora tudo que não for Helmet ou Glasses
+            cls = int(box.cls[0])
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            label = model.names[cls]
+
+            # Filtrar — aceitar SOMENTE:
+            # person, helmet, glasses
+            if cls not in (CLASS_PERSON, CLASS_HELMET, CLASS_GLASSES):
                 continue
 
-            label = model.names[cls_id]
-            conf_box = float(box.conf[0].item())
-            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            # Atualizar status
+            if cls == CLASS_HELMET:
+                helmet = True
+            if cls == CLASS_GLASSES:
+                glasses = True
+            if cls == CLASS_PERSON:
+                person_found = True
 
-            presentes.add(label)
+            # Cor:
+            color = (0, 255, 0) if cls in (CLASS_HELMET, CLASS_GLASSES) else (0, 165, 255)
 
-            cv2.rectangle(
-                frame,
-                (int(x1), int(y1)),
-                (int(x2), int(y2)),
-                (0, 255, 0),
-                2,
-            )
-            cv2.putText(
-                frame,
-                f"{label} {conf_box:.2f}",
-                (int(x1), int(y1) - 5),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 255, 0),
-                2,
-                cv2.LINE_AA,
-            )
+            # Caixas
+            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+            cv2.putText(frame, label, (int(x1), int(y1)-5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
 
-        # Agora o resumo EPI na parte de cima
-        faltando = []
+        # HUD só aparece se houver pessoa detectada
+        if person_found:
+            draw_hud(frame, helmet, glasses)
 
-        # usamos os labels reais que vieram do modelo
-        helmet_label = next((l for l in target_labels if "helmet" in l.lower()), None)
-        glasses_label = next((l for l in target_labels if "glass" in l.lower()), None)
+        cv2.imshow("Real-time PPE Detector", frame)
 
-        if helmet_label:
-            if helmet_label not in presentes:
-                faltando.append("Helmet")
-
-        if glasses_label:
-            if glasses_label not in presentes:
-                faltando.append("Glasses")
-
-        if not faltando:
-            status_text = "EPI OK (Helmet + Glasses)"
-            color = (0, 255, 0)
-        else:
-            status_text = "FALTANDO: " + ", ".join(faltando)
-            color = (0, 0, 255)
-
-        cv2.putText(
-            frame,
-            status_text,
-            (10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.9,
-            color,
-            2,
-            cv2.LINE_AA,
-        )
-
-        cv2.imshow("PPE SH17 - Helmet & Glasses only", frame)
-        if cv2.waitKey(1) & 0xFF == 27:  # ESC
+        if cv2.waitKey(1) & 0xFF == 27:
             break
 
     cap.release()
@@ -128,11 +135,4 @@ def main(weights: str, device: str = "0", conf: float = 0.25, imgsz: int = 960):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--weights", type=str, required=True, help="caminho do .pt treinado")
-    parser.add_argument("--device", type=str, default="0", help="0, 1, cpu, etc.")
-    parser.add_argument("--conf", type=float, default=0.25, help="confiança mínima")
-    parser.add_argument("--imgsz", type=int, default=960, help="tamanho da imagem (lado)")
-    args = parser.parse_args()
-
-    main(args.weights, args.device, args.conf, args.imgsz)
+    main()
